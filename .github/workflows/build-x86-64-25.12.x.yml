@@ -168,6 +168,7 @@ jobs:
             echo "No assets found, exiting gracefully"
             exit 1
           fi
+          ls -la upload-assets
 
       - name: Upload ImmortWrt as release assets
         uses: softprops/action-gh-release@v3
