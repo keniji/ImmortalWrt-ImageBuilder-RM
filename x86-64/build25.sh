@@ -117,4 +117,24 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# ===== 后处理：VMDK 转换为 ESXi 兼容格式 =====
+VMDK_DIR="/home/build/immortalwrt/bin/targets/x86/64"
+if [ -d "$VMDK_DIR" ]; then
+    echo "$(date) - Converting VMDK files to ESXi compatible format..."
+    for vmdk in "$VMDK_DIR"/*.vmdk; do
+        [ -f "$vmdk" ] || continue
+        echo "Processing $vmdk ..."
+        mv "$vmdk" "$vmdk.orig"
+        if qemu-img convert -f vmdk -O vmdk -o subformat=streamOptimized,adapter_type=lsilogic "$vmdk.orig" "$vmdk"; then
+            echo "Conversion succeeded for $vmdk"
+            rm -f "$vmdk.orig"
+        else
+            echo "Conversion failed, restoring original"
+            mv "$vmdk.orig" "$vmdk"
+        fi
+    done
+else
+    echo "VMDK directory not found, skipping conversion."
+fi
+
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Build completed successfully."
