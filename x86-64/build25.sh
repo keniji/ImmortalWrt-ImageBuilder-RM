@@ -117,7 +117,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# ===== 后处理：直接从 raw 镜像生成 ESXi 兼容 VMDK =====
+# ===== 后处理：从 combined-efi.img.gz 生成 ESXi 兼容 VMDK =====
 VMDK_DIR="/home/build/immortalwrt/bin/targets/x86/64"
 echo "$(date) - Checking VMDK directory: $VMDK_DIR"
 ls -la "$VMDK_DIR" || echo "Directory not found"
@@ -126,23 +126,26 @@ if [ -d "$VMDK_DIR" ]; then
     # 删除 ImageBuilder 生成的旧 VMDK（如果有）
     rm -f "$VMDK_DIR"/*.vmdk "$VMDK_DIR"/*.vmdk.gz
 
-    # 查找 combined-efi.img.gz 文件（可能是 ext4 或 squashfs）
+    # 查找 combined-efi.img.gz 文件
     for img_gz in "$VMDK_DIR"/*-combined-efi.img.gz; do
         [ -f "$img_gz" ] || continue
         echo "Processing $img_gz ..."
-        # 解压 img.gz 得到 raw 镜像
-        gunzip -c "$img_gz" > /tmp/combined-efi.raw
-        # 生成新的 VMDK
         base_name=$(basename "$img_gz" .img.gz)
         new_vmdk="$VMDK_DIR/${base_name}.vmdk"
+        
+        # 解压得到完整的磁盘镜像（包含分区表）
+        echo "Decompressing disk image..."
+        gunzip -c "$img_gz" > /tmp/combined-efi.img
+        
+        # 将完整的磁盘镜像转换为 VMDK
         echo "Creating VMDK: $new_vmdk"
-        if qemu-img convert -f raw -O vmdk -o subformat=streamOptimized,adapter_type=lsilogic /tmp/combined-efi.raw "$new_vmdk"; then
+        if qemu-img convert -f raw -O vmdk -o subformat=streamOptimized,adapter_type=lsilogic /tmp/combined-efi.img "$new_vmdk"; then
             echo "✅ VMDK created successfully: $new_vmdk"
             qemu-img info "$new_vmdk"
         else
-            echo "❌ Failed to create VMDK from raw image"
+            echo "❌ Failed to create VMDK from disk image"
         fi
-        rm -f /tmp/combined-efi.raw
+        rm -f /tmp/combined-efi.img
     done
 else
     echo "⚠️ VMDK directory not found, skipping VMDK generation."
