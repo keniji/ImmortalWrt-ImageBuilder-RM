@@ -18,7 +18,7 @@ on:
         description: '选择软件包空间大小'
         required: true
         type: choice
-        default: '1G'
+        default: '4G'
         options:
           - '1G'
           - '2G'
@@ -33,7 +33,7 @@ on:
         description: |
           是否编译 Docker 插件
         required: true
-        default: 'yes'
+        default: 'no'
         type: choice
         options:
           - 'yes'
@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set executable permissions
         run: chmod +x ${{ github.workspace }}/x86-64/build25.sh
@@ -70,8 +70,8 @@ jobs:
       - name: Save Custom Router IP into OpenWrt files
         run: |
           mkdir -p "${{ github.workspace }}/custom"
-          echo "${{ github.event.inputs.custom_router_ip }}" > "${{ github.workspace }}/custom/custom_router_ip.txt"
-          echo "您设置的路由器管理地址是:${{ github.event.inputs.custom_router_ip }}"
+          echo "${{ inputs.custom_router_ip }}" > "${{ github.workspace }}/custom/custom_router_ip.txt"
+          echo "您设置的路由器管理地址是:${{ inputs.custom_router_ip }}"
           # 后续步骤会将该文件映射到路由器/etc/config/custom_router_ip.txt 以便用于开机脚本99-custom.sh读取用户设置的ip
       
       - name: Validate PPPoE Inputs
@@ -85,7 +85,8 @@ jobs:
       
       - name: Enable Store integration
         run: |
-          if [ "${{ github.event.inputs.enable_store }}" == "true" ]; then
+          mkdir -p shell
+          if [ "${{ inputs.enable_store }}" == "true" ]; then
             echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/apk-custom-packages.sh
             echo "✅ 已追加 luci-app-store"
           else
@@ -94,7 +95,7 @@ jobs:
 
       - name: Build ImmortalWrt-x86-64-efi 25.12.x
         run: |
-          profile="${{ github.event.inputs.profile }}"
+          profile="${{ inputs.profile }}"
           case "$profile" in
             1G)
               ROOTFS_SIZE=1024
@@ -110,8 +111,8 @@ jobs:
               ;;
           esac
           echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> $GITHUB_ENV
-          include_docker="${{ github.event.inputs.include_docker }}"
-          luci_version="${{ github.event.inputs.luci_version }}"
+          include_docker="${{ inputs.include_docker }}"
+          luci_version="${{ inputs.luci_version }}"
           echo "Building for rootfs_size: $profile"
           docker run --rm -i \
             --user root \
@@ -121,11 +122,11 @@ jobs:
             -v "${{ github.workspace }}/x86-64/imm25.config:/home/build/immortalwrt/.config" \
             -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
             -v "${{ github.workspace }}/x86-64/build25.sh:/home/build/immortalwrt/build.sh" \
-            -e PROFILE=$ROOTFS_SIZE \
-            -e INCLUDE_DOCKER=$include_docker \
-            -e ENABLE_PPPOE=${{ inputs.enable_pppoe }} \
-            -e PPPOE_ACCOUNT=${{ inputs.pppoe_account }} \
-            -e PPPOE_PASSWORD=${{ inputs.pppoe_password }} \
+            -e PROFILE="$ROOTFS_SIZE" \
+            -e INCLUDE_DOCKER="$include_docker" \
+            -e ENABLE_PPPOE="${{ inputs.enable_pppoe }}" \
+            -e PPPOE_ACCOUNT="${{ inputs.pppoe_account }}" \
+            -e PPPOE_PASSWORD="${{ inputs.pppoe_password }}" \
           immortalwrt/imagebuilder:x86-64-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
           
 
@@ -137,38 +138,42 @@ jobs:
            <img src="https://img.shields.io/badge/若下载慢可套用国内加速站下载-FC7C0D?logo=github&logoColor=fff&labelColor=000&style=for-the-badge"/>
           </a>
           
-          - 🏠 **后台地址**: ${{ github.event.inputs.custom_router_ip }}
+          - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
           - 👤 **用户名**: root
           - 🔑 **密码**: 无
           EOF
 
-          if [ "${{ github.event.inputs.include_docker }}" == "yes" ]; then
-            extra_content="#### 默认带docker"
-            echo -e "\n$extra_content" >> ${{ github.workspace }}/router-info.md
+          if [ "${{ inputs.include_docker }}" == "yes" ]; then
+            echo -e "\n#### 包含 Docker 支持" >> "${{ github.workspace }}/router-info.md"
           else
-            echo -e "\n#### 不带docker" >> ${{ github.workspace }}/router-info.md
+            echo -e "\n#### 不包含 Docker 支持" >> "${{ github.workspace }}/router-info.md"
+          fi
+
+      - name: Prepare assets
+        run: |
+          mkdir -p "${{ github.workspace }}/upload-assets"
+          # 复制 .img.gz（必定存在）
+          cp ${{ github.workspace }}/bin/targets/x86/64/*squashfs-combined-efi.img.gz upload-assets/ || true
+          # 复制 .vmdk（如果存在）
+          if ls ${{ github.workspace }}/bin/targets/x86/64/*.vmdk 1> /dev/null 2>&1; then
+            cp ${{ github.workspace }}/bin/targets/x86/64/*.vmdk upload-assets/
+          fi
+          # 复制 .sha256（如果存在）
+          if ls ${{ github.workspace }}/bin/targets/x86/64/*.sha256 1> /dev/null 2>&1; then
+            cp ${{ github.workspace }}/bin/targets/x86/64/*.sha256 upload-assets/
+          fi
+          # 可选：复制其他产物
+          # 如果上传目录没有任何文件（理论上不会，因为 .img.gz 必存在），可提前退出
+          if [ -z "$(ls -A upload-assets)" ]; then
+            echo "No assets found, exiting gracefully"
+            exit 1  # 或 exit 0 忽略
           fi
 
       - name: Upload ImmortWrt as release assets
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: Autobuild-x86-64
+          tag_name: x86-64-${{ inputs.luci_version }}
           body_path: ${{ github.workspace }}/router-info.md
-          files: |
-            ${{ github.workspace }}/bin/targets/x86/64/*squashfs-combined-efi.img.gz
-          token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload ImmortWrt as release assets
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: Autobuild-x86-64
-          body_path: ${{ github.workspace }}/info.md
-          files: |
-            ${{ github.workspace }}/bin/targets/x86/64/*.vmdk
-            ${{ github.workspace }}/immortalwrt-23.05.4-x86-64-generic-squashfs-combined-efi.img.gz
-            ${{ github.workspace }}/immortalwrt-23.05.4-x86-64-generic-squashfs-combined-efi.img.gz.sha256
-          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ github.workspace }}/upload-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
