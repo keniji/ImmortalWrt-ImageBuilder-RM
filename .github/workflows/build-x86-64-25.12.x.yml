@@ -67,6 +67,10 @@ jobs:
       - name: Set executable permissions
         run: chmod +x ${{ github.workspace }}/x86-64/build25.sh
 
+      - name: Set date for tag
+        id: set_date
+        run: echo "date=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+
       - name: Save Custom Router IP into OpenWrt files
         run: |
           mkdir -p "${{ github.workspace }}/custom"
@@ -128,7 +132,16 @@ jobs:
             -e PPPOE_ACCOUNT="${{ inputs.pppoe_account }}" \
             -e PPPOE_PASSWORD="${{ inputs.pppoe_password }}" \
           immortalwrt/imagebuilder:x86-64-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
-          
+
+      - name: Compress VMDK files
+        run: |
+          VMDK_DIR="${{ github.workspace }}/bin/targets/x86/64"
+          if ls "$VMDK_DIR"/*.vmdk 1> /dev/null 2>&1; then
+            echo "Compressing VMDK files..."
+            gzip -9 -v "$VMDK_DIR"/*.vmdk
+          else
+            echo "No VMDK files found to compress."
+          fi
 
       - name: Create info
         run: |
@@ -152,27 +165,24 @@ jobs:
       - name: Prepare assets
         run: |
           mkdir -p "${{ github.workspace }}/upload-assets"
-          # 复制 .img.gz（必定存在）
           cp ${{ github.workspace }}/bin/targets/x86/64/*squashfs-combined-efi.img.gz upload-assets/ || true
-          # 复制 .vmdk（如果存在）
-          if ls ${{ github.workspace }}/bin/targets/x86/64/*.vmdk 1> /dev/null 2>&1; then
-            cp ${{ github.workspace }}/bin/targets/x86/64/*.vmdk upload-assets/
+          # 复制压缩后的 .vmdk.gz
+          if ls ${{ github.workspace }}/bin/targets/x86/64/*.vmdk.gz 1> /dev/null 2>&1; then
+            cp ${{ github.workspace }}/bin/targets/x86/64/*.vmdk.gz upload-assets/
           fi
           # 复制 .sha256（如果存在）
           if ls ${{ github.workspace }}/bin/targets/x86/64/*.sha256 1> /dev/null 2>&1; then
             cp ${{ github.workspace }}/bin/targets/x86/64/*.sha256 upload-assets/
           fi
-          # 可选：复制其他产物
-          # 如果上传目录没有任何文件（理论上不会，因为 .img.gz 必存在），可提前退出
           if [ -z "$(ls -A upload-assets)" ]; then
             echo "No assets found, exiting gracefully"
-            exit 1  # 或 exit 0 忽略
+            exit 1
           fi
 
       - name: Upload ImmortWrt as release assets
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: x86-64-${{ inputs.luci_version }}
+          tag_name: ${{ steps.set_date.outputs.date }}-x86-64-${{ inputs.luci_version }}
           body_path: ${{ github.workspace }}/router-info.md
           files: ${{ github.workspace }}/upload-assets/*
         env:
