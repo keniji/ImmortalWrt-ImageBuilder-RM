@@ -160,6 +160,9 @@ jobs:
           if ls ${{ github.workspace }}/bin/targets/x86/64/*.vmdk.gz 1> /dev/null 2>&1; then
             cp ${{ github.workspace }}/bin/targets/x86/64/*.vmdk.gz upload-assets/
           fi
+          if ls ${{ github.workspace }}/bin/targets/x86/64/*.vmdk 1> /dev/null 2>&1; then
+            cp ${{ github.workspace }}/bin/targets/x86/64/*.vmdk upload-assets/
+          fi
           # 复制 .sha256（如果存在）
           if ls ${{ github.workspace }}/bin/targets/x86/64/*.sha256 1> /dev/null 2>&1; then
             cp ${{ github.workspace }}/bin/targets/x86/64/*.sha256 upload-assets/
