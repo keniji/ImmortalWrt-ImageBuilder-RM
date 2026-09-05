@@ -117,26 +117,31 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# ===== 后处理：VMDK 转换为 ESXi 兼容格式 =====
 VMDK_DIR="/home/build/immortalwrt/bin/targets/x86/64"
 echo "$(date) - Checking VMDK directory: $VMDK_DIR"
 ls -la "$VMDK_DIR" || echo "Directory not found"
 
 if [ -d "$VMDK_DIR" ]; then
+    # 1. 如果存在 .vmdk.gz，先解压
+    if ls "$VMDK_DIR"/*.vmdk.gz 1>/dev/null 2>&1; then
+        echo "$(date) - Decompressing VMDK files before conversion..."
+        for gz in "$VMDK_DIR"/*.vmdk.gz; do
+            gunzip "$gz"
+        done
+    fi
+
+    # 2. 转换所有 .vmdk 文件
     echo "$(date) - Converting VMDK files to ESXi compatible format..."
-    # 使用 find 遍历所有 .vmdk 文件（包括可能存在的压缩文件）
-    find "$VMDK_DIR" -maxdepth 1 -name "*.vmdk" -type f | while read -r vmdk; do
+    for vmdk in "$VMDK_DIR"/*.vmdk; do
+        [ -f "$vmdk" ] || continue
         echo "Processing $vmdk ..."
-        # 显示原始格式
-        qemu-img info "$vmdk"
-        # 备份
+        qemu-img info "$vmdk"   # 显示原始格式（调试）
         mv "$vmdk" "$vmdk.orig"
-        # 转换为 streamOptimized（仅指定 subformat）
         if qemu-img convert -f vmdk -O vmdk -o subformat=streamOptimized "$vmdk.orig" "$vmdk"; then
             echo "✅ Conversion succeeded for $vmdk"
             qemu-img info "$vmdk"   # 显示新格式
             rm -f "$vmdk.orig"
-            # 可选：压缩 VMDK（如需要可取消注释）
+            # 3. 重新压缩为 .gz（与构建产物一致）
             gzip -9 "$vmdk"
         else
             echo "❌ Conversion failed, restoring original"
