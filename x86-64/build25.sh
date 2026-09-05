@@ -117,38 +117,33 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# ===== 后处理：VMDK 转换为 ESXi 兼容格式 =====
+# ===== 后处理：直接从 raw 镜像生成 ESXi 兼容 VMDK =====
 VMDK_DIR="/home/build/immortalwrt/bin/targets/x86/64"
 echo "$(date) - Checking VMDK directory: $VMDK_DIR"
 ls -la "$VMDK_DIR" || echo "Directory not found"
 
 if [ -d "$VMDK_DIR" ]; then
-    # 1. 如果有 .vmdk.gz，先解压
-    if ls "$VMDK_DIR"/*.vmdk.gz 1>/dev/null 2>&1; then
-        echo "$(date) - Decompressing VMDK files before conversion..."
-        for gz in "$VMDK_DIR"/*.vmdk.gz; do
-            gunzip "$gz"
-        done
-    fi
+    # 删除 ImageBuilder 生成的旧 VMDK（如果有）
+    rm -f "$VMDK_DIR"/*.vmdk "$VMDK_DIR"/*.vmdk.gz
 
-    # 2. 转换所有 .vmdk 文件（增加 compat=1.1 和 adapter_type）
-    echo "$(date) - Converting VMDK files to ESXi compatible format..."
-    for vmdk in "$VMDK_DIR"/*.vmdk; do
-        [ -f "$vmdk" ] || continue
-        echo "Processing $vmdk ..."
-        qemu-img info "$vmdk"
-        mv "$vmdk" "$vmdk.orig"
-        if qemu-img convert -f vmdk -O vmdk -o subformat=streamOptimized,compat=1.1,adapter_type=lsilogic "$vmdk.orig" "$vmdk"; then
-            echo "✅ Conversion succeeded for $vmdk"
-            qemu-img info "$vmdk"
-            rm -f "$vmdk.orig"
-            # 3. 重新压缩为 .gz
-            gzip -9 "$vmdk"
+    # 查找 combined-efi.img.gz 文件（可能是 ext4 或 squashfs）
+    for img_gz in "$VMDK_DIR"/*-combined-efi.img.gz; do
+        [ -f "$img_gz" ] || continue
+        echo "Processing $img_gz ..."
+        # 解压 img.gz 得到 raw 镜像
+        gunzip -c "$img_gz" > /tmp/combined-efi.raw
+        # 生成新的 VMDK
+        base_name=$(basename "$img_gz" .img.gz)
+        new_vmdk="$VMDK_DIR/${base_name}.vmdk"
+        echo "Creating VMDK: $new_vmdk"
+        if qemu-img convert -f raw -O vmdk -o subformat=streamOptimized,adapter_type=lsilogic /tmp/combined-efi.raw "$new_vmdk"; then
+            echo "✅ VMDK created successfully: $new_vmdk"
+            qemu-img info "$new_vmdk"
         else
-            echo "❌ Conversion failed, restoring original"
-            mv "$vmdk.orig" "$vmdk"
+            echo "❌ Failed to create VMDK from raw image"
         fi
+        rm -f /tmp/combined-efi.raw
     done
 else
-    echo "⚠️ VMDK directory not found, skipping conversion."
+    echo "⚠️ VMDK directory not found, skipping VMDK generation."
 fi
