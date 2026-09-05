@@ -165,7 +165,7 @@ jobs:
       - name: Prepare assets
         run: |
           mkdir -p "${{ github.workspace }}/upload-assets"
-          cp ${{ github.workspace }}/bin/targets/x86/64/*squashfs-combined-efi.img.gz upload-assets/ || true
+          cp ${{ github.workspace }}/bin/targets/x86/64/*combined-efi.img.gz upload-assets/ || true
           # 复制压缩后的 .vmdk.gz
           if ls ${{ github.workspace }}/bin/targets/x86/64/*.vmdk.gz 1> /dev/null 2>&1; then
             cp ${{ github.workspace }}/bin/targets/x86/64/*.vmdk.gz upload-assets/
