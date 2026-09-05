@@ -134,7 +134,7 @@ if [ -d "$VMDK_DIR" ]; then
             qemu-img info "$vmdk"   # 显示新格式
             rm -f "$vmdk.orig"
             # 可选：压缩 VMDK（如需要可取消注释）
-            # gzip -9 "$vmdk"
+            gzip -9 "$vmdk"
         else
             echo "❌ Conversion failed, restoring original"
             mv "$vmdk.orig" "$vmdk"
