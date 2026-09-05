@@ -117,18 +117,21 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# ===== 后处理：转换 VMDK 为 ESXi 兼容的 streamOptimized 格式 =====
+# ===== 后处理：VMDK 转换为 ESXi 兼容格式 =====
 VMDK_DIR="/home/build/immortalwrt/bin/targets/x86/64"
+echo "$(date) - Checking VMDK directory: $VMDK_DIR"
+ls -la "$VMDK_DIR" || echo "Directory not found"
+
 if [ -d "$VMDK_DIR" ]; then
     echo "$(date) - Converting VMDK files to ESXi compatible format..."
-    for vmdk in "$VMDK_DIR"/*.vmdk; do
-        [ -f "$vmdk" ] || continue
+    # 使用 find 遍历所有 .vmdk 文件（包括可能存在的压缩文件）
+    find "$VMDK_DIR" -maxdepth 1 -name "*.vmdk" -type f | while read -r vmdk; do
         echo "Processing $vmdk ..."
-        # 显示原始格式（调试）
+        # 显示原始格式
         qemu-img info "$vmdk"
-        # 备份原文件
+        # 备份
         mv "$vmdk" "$vmdk.orig"
-        # 转换为 streamOptimized
+        # 转换为 streamOptimized（仅指定 subformat）
         if qemu-img convert -f vmdk -O vmdk -o subformat=streamOptimized "$vmdk.orig" "$vmdk"; then
             echo "✅ Conversion succeeded for $vmdk"
             qemu-img info "$vmdk"   # 显示新格式
@@ -143,5 +146,3 @@ if [ -d "$VMDK_DIR" ]; then
 else
     echo "⚠️ VMDK directory not found, skipping conversion."
 fi
-
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Build completed successfully."
